@@ -5,12 +5,20 @@
 
 from distutils.core import setup, Extension
 
-example_library = Extension(
-    "example_library",
-    sources=["example_library.c"]
+liblitmus_dir = "../liblitmus/"
+
+liblitmus_helper = Extension(
+    "liblitmus_helper",
+    sources=["liblitmus_wrapper.c"],
+    include_dirs=[
+        liblitmus_dir + "include",
+        liblitmus_dir + "arch/x86/include"
+    ],
+    library_dirs=[liblitmus_dir],
+    libraries=["litmus"]
 )
 
-description = "Just an example of how to create a python C library."
-setup(name="Example Library", version="1.0", description=description,
-    ext_modules=[example_library])
+description = "A python interface to liblitmus, for LITMUS^RT."
+setup(name="Liblitmus Helper", version="1.0", description=description,
+    ext_modules=[liblitmus_helper])
 
