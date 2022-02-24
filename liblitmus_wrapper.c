@@ -7,6 +7,9 @@
 #include <litmus.h>
 #include <unistd.h>
 
+#define NS_PER_SECOND (1e9)
+#define SECONDS_PER_NS (1e-9)
+
 static void SetLITMUSError(const char *fn, int result) {
   PyErr_Format(PyExc_OSError, "%s returned %d. Errno: %s", result,
     strerror(errno));
@@ -77,7 +80,7 @@ static PyObject* SleepNextPeriod(PyObject *self, PyObject *args) {
 static PyObject* SetRTTaskParam(PyObject *self, PyObject *args,
     PyObject *kwargs) {
   struct rt_task param;
-  long long cost, period, deadline, phase;
+  double cost, period, deadline, phase;
   unsigned int cpu, priority, class, budget_policy, release_policy;
   int result;
 
@@ -106,21 +109,25 @@ static PyObject* SetRTTaskParam(PyObject *self, PyObject *args,
     NULL,
   };
 
-  if (!PyArg_ParseTupleAndKeywords(args, kwargs, "|$LLLLIIIII", kw_list, &cost,
+  if (!PyArg_ParseTupleAndKeywords(args, kwargs, "|$ddddIIIII", kw_list, &cost,
     &period, &deadline, &phase, &cpu, &priority, &class, &budget_policy,
     &release_policy)) {
     return NULL;
   }
-  if (!cost || !period) {
+  if ((cost < 0) || (period < 0) || (deadline < 0) || (phase < 0)) {
+    PyErr_Format(PyExc_ValueError, "All times must be positive.");
+    return NULL;
+  }
+  if (!((cost > 0) && (period > 0))) {
     PyErr_Format(PyExc_ValueError, "The exec_cost and period arguments to "
       "set_rt_task_param must be provided and nonzero.");
     return NULL;
   }
   init_rt_task_param(&param);
-  param.exec_cost = cost;
-  param.period = period;
-  param.relative_deadline = deadline;
-  param.phase = phase;
+  param.exec_cost = (lt_t) (cost * NS_PER_SECOND);
+  param.period = (lt_t) (period * NS_PER_SECOND);
+  param.relative_deadline = (lt_t) (deadline * NS_PER_SECOND);
+  param.phase = (lt_t) (phase * NS_PER_SECOND);
   param.cpu = cpu;
   param.priority = priority;
   param.cls = class;
@@ -137,7 +144,7 @@ static PyObject* SetRTTaskParam(PyObject *self, PyObject *args,
 
 static PyObject* GetRTTaskParam(PyObject *self, PyObject *args) {
   struct rt_task param;
-  long long cost, period, deadline, phase;
+  double cost, period, deadline, phase;
   unsigned int cpu, priority, class, budget_policy, release_policy;
   int result;
   result = get_rt_task_param(gettid(), &param);
@@ -145,16 +152,16 @@ static PyObject* GetRTTaskParam(PyObject *self, PyObject *args) {
     SetLITMUSError("get_rt_task_param", result);
     return NULL;
   }
-  cost = param.exec_cost;
-  period = param.period;
-  deadline = param.relative_deadline;
-  phase = param.phase;
+  cost = ((double) param.exec_cost) * SECONDS_PER_NS;
+  period = ((double) param.period) * SECONDS_PER_NS;
+  deadline = ((double) param.relative_deadline) * SECONDS_PER_NS;
+  phase = ((double) param.phase) * SECONDS_PER_NS;
   cpu = param.cpu;
   priority = param.priority;
   class = param.cls;
   budget_policy = param.budget_policy;
   release_policy = param.release_policy;
-  return Py_BuildValue("{s:L,s:L,s:L,s:L,s:I,s:I,s:I,s:I,s:I}",
+  return Py_BuildValue("{s:d,s:d,s:d,s:d,s:I,s:I,s:I,s:I,s:I}",
     "exec_cost", cost, "period", period, "relative_deadline", deadline,
     "phase", phase, "cpu", cpu, "priority", priority, "cls", class,
     "budget_policy", budget_policy, "release_policy", release_policy);
@@ -260,6 +267,40 @@ static PyObject* LITMUSUnlock(PyObject *self, PyObject *args) {
   Py_RETURN_NONE;
 }
 
+static PyObject* GetTID(PyObject *self, PyObject *args) {
+  int result;
+  result = gettid();
+  return Py_BuildValue("i", result);
+}
+
+static PyObject* WaitForTSRelease(PyObject *self, PyObject *args) {
+  int result;
+  result = wait_for_ts_release();
+  if (result != 0) {
+    SetLITMUSError("wait_for_ts_release", result);
+    return NULL;
+  }
+  Py_RETURN_NONE;
+}
+
+static PyObject* ReleaseTS(PyObject *self, PyObject *args) {
+  lt_t when = 0;
+  double arg = 0.0;
+  int result;
+  if (!PyArg_ParseTuple(args, "d", &arg)) return NULL;
+  when = (lt_t) (arg * NS_PER_SECOND);
+  result = release_ts(&when);
+  return Py_BuildValue("i", result);
+}
+
+static PyObject* LITMUSClock(PyObject *self, PyObject *args) {
+  double to_return;
+  lt_t tmp;
+  tmp = litmus_clock();
+  to_return = ((double) tmp) * SECONDS_PER_NS;
+  return Py_BuildValue("d", to_return);
+}
+
 static PyMethodDef liblitmus_helper_methods[] = {
   {
     "init_litmus",
@@ -306,14 +347,15 @@ static PyMethodDef liblitmus_helper_methods[] = {
     "Sets the parameters when initializing an RT task. Sets the parameters for"
       " the current thread. The exec_cost and period keyword args must be "
       "provided and nonzero. Other keyword args have the same names as the "
-      "fields in the rt_task struct.",
+      "fields in the rt_task struct. Time args are floating-point numbers of "
+      "seconds.",
   },
   {
     "get_rt_task_param",
     GetRTTaskParam,
     METH_NOARGS,
     "Returns a dict with fields corresponding to the values in the rt_task "
-      "struct.",
+      "struct. Times are given as floating-point numbers of seconds.",
   },
   {
     "get_ctrl_page",
@@ -365,6 +407,33 @@ static PyMethodDef liblitmus_helper_methods[] = {
     LITMUSUnlock,
     METH_VARARGS,
     "Releases a lock. Requires a single arg: the lock's OD.",
+  },
+  {
+    "get_tid",
+    GetTID,
+    METH_NOARGS,
+    "Returns the current thread's TID.",
+  },
+  {
+    "wait_for_ts_release",
+    WaitForTSRelease,
+    METH_NOARGS,
+    "Waits until all real-time tasks have been released.",
+  },
+  {
+    "release_ts",
+    ReleaseTS,
+    METH_VARARGS,
+    "Releases all tasks in the task system. Takes one arg: the time when the "
+      "release should take place. (An absolute time in seconds, based on "
+      "litmus_clock().) Returns the number of tasks that were released.",
+  },
+  {
+    "litmus_clock",
+    LITMUSClock,
+    METH_NOARGS,
+    "Returns the current time used by the LITMUS scheduler. Returns the time "
+      "as a floating-point number of seconds.",
   },
   {NULL, NULL, 0, NULL},
 };
