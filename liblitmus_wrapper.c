@@ -11,7 +11,7 @@
 #define SECONDS_PER_NS (1e-9)
 
 static void SetLITMUSError(const char *fn, int result) {
-  PyErr_Format(PyExc_OSError, "%s returned %d. Errno: %s", result,
+  PyErr_Format(PyExc_OSError, "%s returned %d. Errno: %s", fn, result,
     strerror(errno));
 }
 
