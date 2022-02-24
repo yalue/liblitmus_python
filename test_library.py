@@ -26,11 +26,14 @@ class TestState:
         liblitmus.task_mode(True)
         self.lock_od = liblitmus.open_kfmlp_lock(".kfmlp_lock", 1, 3)
 
-    def run_jobs(self, count):
-        """ Runs the given number of jobs. """
+    def run_jobs(self, count, job_time):
+        """ Runs the given number of jobs. If job_time is positive, then each
+        job takes exactly the given amount of time. """
         start_time = liblitmus.litmus_clock()
         for i in range(count):
-            to_sleep = random.random() * self.max_cost * 0.75
+            to_sleep = job_time
+            if to_sleep <= 0:
+                to_sleep = random.random() * self.max_cost * 0.75
             print("At %f s: TID %d, job %d. Sleeping for %.03f s." % (
                 liblitmus.litmus_clock() - start_time,
                 liblitmus.get_tid(), liblitmus.get_job_no(), to_sleep))
@@ -40,7 +43,8 @@ class TestState:
             time.sleep(to_sleep)
             liblitmus.litmus_unlock(self.lock_od)
             print("Released lock. Was slot " + str(slot))
-            liblitmus.sleep_next_period()
+            if i < (count - 1):
+                liblitmus.sleep_next_period()
 
 def run():
     parser = argparse.ArgumentParser()
@@ -69,14 +73,11 @@ def run():
     if args.jobs <= 0:
         print("The number of jobs to run must be positive.")
     state = TestState(args.period, args.wcet)
-    print("LITMUS task param: %s" % (str(liblitmus.get_rt_task_param()),))
-    print("LITMUS ctrl page: %s" % (str(liblitmus.get_ctrl_page()),))
-    print("Current LITMUS clock: %f" % (liblitmus.litmus_clock(),))
     if args.wait:
         print("Waiting for task system release.")
         liblitmus.wait_for_ts_release()
-    print("About to run jobs. TID=%d" % (liblitmus.get_tid(),))
-    state.run_jobs(args.jobs)
+    print("About to %d run jobs. TID=%d" % (args.jobs, liblitmus.get_tid(),))
+    state.run_jobs(args.jobs, args.sleep_time)
     liblitmus.exit_litmus()
 
 if __name__ == "__main__":
