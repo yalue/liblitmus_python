@@ -301,6 +301,11 @@ static PyObject* LITMUSClock(PyObject *self, PyObject *args) {
   return Py_BuildValue("d", to_return);
 }
 
+static PyObject* GetNumTSReleaseWaiters(PyObject *self, PyObject *args) {
+  int result = get_nr_ts_release_waiters();
+  return Py_BuildValue("i", result);
+}
+
 static PyMethodDef liblitmus_helper_methods[] = {
   {
     "init_litmus",
@@ -434,6 +439,12 @@ static PyMethodDef liblitmus_helper_methods[] = {
     METH_NOARGS,
     "Returns the current time used by the LITMUS scheduler. Returns the time "
       "as a floating-point number of seconds.",
+  },
+  {
+    "get_nr_ts_release_waiters",
+    GetNumTSReleaseWaiters,
+    METH_NOARGS,
+    "Returns the number of currently waiting tasks.",
   },
   {NULL, NULL, 0, NULL},
 };
