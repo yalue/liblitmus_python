@@ -24,6 +24,15 @@ static PyObject* InitLITMUS(PyObject *self, PyObject *args) {
   Py_RETURN_NONE;
 }
 
+static PyObject* InitRTThread(PyObject *self, PyObject *args) {
+  int result = init_rt_thread();
+  if (result != 0) {
+    SetLITMUSError("init_rt_thread", result);
+    return NULL;
+  }
+  Py_RETURN_NONE;
+}
+
 static PyObject* ExitLITMUS(PyObject *self, PyObject *args) {
   exit_litmus();
   Py_RETURN_NONE;
@@ -312,6 +321,13 @@ static PyMethodDef liblitmus_helper_methods[] = {
     InitLITMUS,
     METH_NOARGS,
     "Initializes real-time properties for the entire program. No args.",
+  },
+  {
+    "init_rt_thread",
+    InitRTThread,
+    METH_NOARGS,
+    "Initializes LITMUS for the calling thread. Can be used in lieu of "
+      "init_litmus to avoid calling mlockall(). No args.",
   },
   {
     "exit_litmus",
